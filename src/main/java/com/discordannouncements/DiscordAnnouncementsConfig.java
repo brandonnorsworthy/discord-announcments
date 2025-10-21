@@ -191,7 +191,7 @@ public interface DiscordAnnouncementsConfig extends Config {
             position = 2
     )
     default String collectionLogMessage() {
-        return "$name has just completed a collection log: $entry";
+        return "$name received a new collection log item: $entry";
     }
 
     @ConfigItem(
