@@ -53,15 +53,27 @@ public class DiscordAnnouncementsPlugin extends Plugin {
             return;
         }
 
-        final String webhookUrl = config.webhookUrl();
-        if (webhookUrl == null || webhookUrl.isBlank()) {
+        final String webhookURLs = config.webhook();
+        if (webhookURLs == null || webhookURLs.isBlank()) {
             client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Please set your Discord Webhook URL in the plugin settings.", null);
             return;
         }
 
-        final String content = config.testMessage() == null || config.testMessage().isBlank()
-                ? "Test message from RuneLite DiscordAnnouncements plugin."
-                : config.testMessage();
+        String message = config.collectionLogMessage();
+
+        //        return "$name has just completed a collection log: $entry";
+        final String baseContent = message == null || message.isBlank()
+        ? "Test message from RuneLite DiscordAnnouncements plugin."
+        : message;
+            // Perform simple placeholder replacements for the test command.
+        final String rsn = client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null
+            ? client.getLocalPlayer().getName()
+            : "Player";
+        final String content = baseContent
+            .replace("$name", rsn)
+            .replace("$entry", "potato");
+
+
         final String payload = "{\"content\":\"" + content.replace("\"", "\\\"") + "\"}";
 
         // optional immediate feedback
@@ -71,7 +83,7 @@ public class DiscordAnnouncementsPlugin extends Plugin {
             try {
                 HttpClient httpClient = HttpClient.newHttpClient();
                 HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(webhookUrl))
+                        .uri(URI.create(webhookURLs))
                         .header("Content-Type", "application/json; charset=utf-8")
                         .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
                         .build();
