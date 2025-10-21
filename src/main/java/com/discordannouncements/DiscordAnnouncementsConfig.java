@@ -9,7 +9,7 @@ import net.runelite.client.config.ConfigSection;
 public interface DiscordAnnouncementsConfig extends Config {
     // Webhook config section
     @ConfigSection(
-            name = "Webhook Settings",
+            name = "General Settings",
             description = "The config for webhook content notifications",
             position = 0,
             closedByDefault = true
@@ -24,6 +24,18 @@ public interface DiscordAnnouncementsConfig extends Config {
             position = 0
     )
     String webhook();
+
+    @ConfigItem(
+            keyName = "sendScreenshot",
+            name = "Include screenshots",
+            description = "Include a screenshot with the Discord notification",
+            section = collectionLogsConfig,
+            position = 3
+    )
+    default boolean sendScreenshot() {
+        return false;
+    }
+    // end Webhook config section
 
     // Levels config section
     @ConfigSection(
@@ -41,7 +53,7 @@ public interface DiscordAnnouncementsConfig extends Config {
             section = levelConfig,
             position = 1
     )
-    default boolean includeLevelling() {
+    default boolean includeLevel() {
         return false;
     }
 
@@ -52,7 +64,7 @@ public interface DiscordAnnouncementsConfig extends Config {
             section = levelConfig,
             position = 2
     )
-    default int minLevel() {
+    default int minimumLevel() {
         return 0;
     }
 
@@ -85,7 +97,7 @@ public interface DiscordAnnouncementsConfig extends Config {
             section = levelConfig,
             position = 7
     )
-    default boolean includeTotalLevel() {
+    default boolean includeTotalLevelMessage() {
         return true;
     }
 
@@ -116,7 +128,7 @@ public interface DiscordAnnouncementsConfig extends Config {
             description = "Send messages when you complete a quest.",
             section = questingConfig
     )
-    default boolean includeQuestComplete() {
+    default boolean includeQuests() {
         return false;
     }
 
@@ -192,17 +204,6 @@ public interface DiscordAnnouncementsConfig extends Config {
     )
     default String collectionLogMessage() {
         return "$name received a new collection log item: $entry";
-    }
-
-    @ConfigItem(
-            keyName = "sendCollectionLogScreenshot",
-            name = "Include collection log screenshots",
-            description = "Include a screenshot with the Discord notification when you fill a new collection log slot",
-            section = collectionLogsConfig,
-            position = 3
-    )
-    default boolean sendCollectionLogScreenshot() {
-        return false;
     }
     // end Collection Log section
 
