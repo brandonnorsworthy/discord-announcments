@@ -12,7 +12,10 @@
 - When adding new external dependencies, prefer small, well-maintained libraries and document why they're needed in README or build files.
 - If unsure about an API or design choice, add a TODO with rationale and include a reference to the RuneLite documentation or issue for follow-up.
 - Keep commits focused and small; include descriptive commit messages and update any version or manifest files as required.
+- Pick only one feature at a time as described in the readme.
 
 DO NOT:
 - Use hard-coded RuneLite internal paths or rely on unpublished internal APIs.
 - Ignore the repository README or existing plugin conventions.
+
+When you are finished reanalyze your own work and compare it to the instructions given and reply with a ✅ compliant if all checks out or a ❌ for a mismatch issue with implementation and what was described be the user and repository notes.
