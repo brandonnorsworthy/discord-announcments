@@ -10,13 +10,13 @@ A plugin for sending announcements to a Discord channel when certain events occu
 1. Enjoy real-time updates in your Discord channel!
 
 ## Features
-- [ ] Customizable message templates
-- [ ] Configurable Discord webhook URL
-- [ ] Enable/disable specific announcement types
+- [x] Customizable message templates
+- [x] Configurable Discord webhook URL
+- [x] Enable/disable specific announcement types
   - [ ] Pet drops
-  - [ ] Collection log entries
-  - [ ] Combat achievements
-  - [ ] Level-ups milestones (e.g., every 10 levels, 99)
+  - [x] Collection log entries
+  - [x] Combat achievements
+  - [x] Level-ups milestones (e.g., every 10 levels, 99)
   - [ ] Quest completions
   - [ ] Group ironman bank notifications
   - [ ] Boss kc milestones (e.g. 1st, every 50, 100 kills)

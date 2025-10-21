@@ -1,241 +1,166 @@
 package com.discordannouncements;
 
-import net.runelite.client.config.Config;
-import net.runelite.client.config.ConfigGroup;
-import net.runelite.client.config.ConfigItem;
-import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.*;
 
-@ConfigGroup("example")
-public interface DiscordAnnouncementsConfig extends Config {
-    // Webhook config section
-    @ConfigSection(
-            name = "General Settings",
-            description = "The config for webhook content notifications",
-            position = 0,
-            closedByDefault = true
-    )
-    String webhookConfig = "webhookConfig";
+@ConfigGroup("discordannouncements")
+public interface DiscordAnnouncementsConfig extends Config
+{
+    // ============================================================
+    // Webhook Configuration
+    // ============================================================
 
     @ConfigItem(
-            keyName = "webhookURLs",
-            name = "Webhook URL(s)",
-            description = "The Discord Webhook URL(s) to send messages to, separated by a newline.",
-            section = webhookConfig,
-            position = 0
+        keyName = "webhook",
+        name = "Discord Webhook URL(s)",
+        description = "Enter one or more Discord webhook URLs, one per line."
     )
     String webhook();
 
-    @ConfigItem(
-            keyName = "sendScreenshot",
-            name = "Include screenshots",
-            description = "Include a screenshot with the Discord notification",
-            section = collectionLogsConfig,
-            position = 3
-    )
-    default boolean sendScreenshot() {
-        return false;
-    }
-    // end Webhook config section
+    // ============================================================
+    // Global Screenshot Toggle
+    // ============================================================
 
-    // Levels config section
+    @ConfigItem(
+        keyName = "attachScreenshots",
+        name = "Attach Screenshots",
+        description = "Attach a screenshot to ALL announcements (level-ups, collection log, combat tasks, test command)."
+    )
+    default boolean attachScreenshots() { return true; }
+
+    // ============================================================
+    // Level-Up Notifications
+    // ============================================================
+
     @ConfigSection(
-            name = "Level",
-            description = "The config for level notifications",
-            position = 1,
-            closedByDefault = true
+        name = "Level-Up Settings",
+        description = "Configure when and how level-up notifications are sent.",
+        position = 0
     )
-    String levelConfig = "levelConfig";
+    String levelSection = "levelSection";
 
     @ConfigItem(
-            keyName = "includeLevel",
-            name = "Send Level Notifications",
-            description = "Send messages when you level up a skill.",
-            section = levelConfig,
-            position = 1
+        keyName = "includeLevel",
+        name = "Send Level-Up Announcements",
+        description = "Enable or disable level-up messages.",
+        section = levelSection,
+        position = 1
     )
-    default boolean includeLevel() {
-        return false;
-    }
+    default boolean includeLevel() { return true; }
+
+    @Range(min = 1)
+    @ConfigItem(
+        keyName = "levelInterval",
+        name = "Level Interval",
+        description = "Announce every N levels (e.g., every 5 levels). Always announces level 99.",
+        section = levelSection,
+        position = 2
+    )
+    default int levelInterval() { return 5; }
+
+    @Range(min = 1, max = 99)
+    @ConfigItem(
+        keyName = "minimumLevel",
+        name = "Minimum Level",
+        description = "Only announce level-ups at or above this level.",
+        section = levelSection,
+        position = 3
+    )
+    default int minimumLevel() { return 50; }
 
     @ConfigItem(
-            keyName = "minimumLevel",
-            name = "Minimum level",
-            description = "Levels greater than or equal to this value will send a message.",
-            section = levelConfig,
-            position = 2
+        keyName = "levelMessage",
+        name = "Level Message",
+        description = "Message format. Supports: $name, $skill, $level.",
+        section = levelSection,
+        position = 4
     )
-    default int minimumLevel() {
-        return 0;
-    }
-
-    @ConfigItem(
-            keyName = "levelInterval",
-            name = "Send every X levels",
-            description = "Only levels that are a multiple of this value are sent. Level 99 will always be sent regardless of this value.",
-            section = levelConfig,
-            position = 3
-    )
-    default int levelInterval() {
-        return 1;
-    }
-
-    @ConfigItem(
-            keyName = "levelMessage",
-            name = "Level Message",
-            description = "Message to send to Discord on Level",
-            section = levelConfig,
-            position = 5
-    )
-    default String levelMessage() {
+    default String levelMessage()
+    {
         return "$name has reached $skill level $level.";
     }
 
     @ConfigItem(
-            keyName = "includeTotalLevelMessage",
-            name = "Include total level with message",
-            description = "Include total level in the message to send to Discord.",
-            section = levelConfig,
-            position = 7
+        keyName = "includeTotalLevelMessage",
+        name = "Include Total Level",
+        description = "Also include a message showing the player’s total level.",
+        section = levelSection,
+        position = 5
     )
-    default boolean includeTotalLevelMessage() {
-        return true;
-    }
+    default boolean includeTotalLevelMessage() { return false; }
 
     @ConfigItem(
-            keyName = "totalLevelMessage",
-            name = "Total Level Message",
-            description = "Message to send to Discord when Total Level is included.",
-            section = levelConfig,
-            position = 8
+        keyName = "totalLevelMessage",
+        name = "Total Level Message",
+        description = "Message appended when showing total level. Supports: $total.",
+        section = levelSection,
+        position = 6
     )
-    default String totalLevelMessage() {
+    default String totalLevelMessage()
+    {
         return " - Total Level: $total";
     }
-    // End levelling config section
 
-    // Questing config section
+    // ============================================================
+    // Collection Log Notifications
+    // ============================================================
+
     @ConfigSection(
-            name = "Questing",
-            description = "The config for questing notifications",
-            position = 2,
-            closedByDefault = true
+        name = "Collection Log Settings",
+        description = "Configure how collection log notifications are sent.",
+        position = 10
     )
-    String questingConfig = "questingConfig";
+    String collectionLogSection = "collectionLogSection";
 
     @ConfigItem(
-            keyName = "includeQuests",
-            name = "Send Quest Notifications",
-            description = "Send messages when you complete a quest.",
-            section = questingConfig
+        keyName = "includeCollectionLogs",
+        name = "Send Collection Log Notifications",
+        description = "Announce when a new item is added to your collection log.",
+        section = collectionLogSection,
+        position = 11
     )
-    default boolean includeQuests() {
-        return false;
-    }
+    default boolean includeCollectionLogs() { return true; }
 
     @ConfigItem(
-            keyName = "questMessage",
-            name = "Quest Message",
-            description = "Message to send to Discord on Quest",
-            section = questingConfig,
-            position = 1
+        keyName = "collectionLogMessage",
+        name = "Collection Log Message",
+        description = "Message format. Supports: $name, $entry.",
+        section = collectionLogSection,
+        position = 12
     )
-    default String questMessage() {
-        return "$name has completed a quest: $quest";
+    default String collectionLogMessage()
+    {
+        return "$name has just added to the collection log: $entry";
     }
-    // End questing config section
 
-    // Pet config section
+    // ============================================================
+    // Combat Achievement Notifications
+    // ============================================================
+
     @ConfigSection(
-            name = "Pets",
-            description = "The config for pet notifications",
-            position = 5,
-            closedByDefault = true
+        name = "Combat Achievement Settings",
+        description = "Configure how combat achievement notifications are sent.",
+        position = 20
     )
-    String petConfig = "petConfig";
+    String combatSection = "combatSection";
 
     @ConfigItem(
-            keyName = "includePets",
-            name = "Send Pet Notifications",
-            description = "Send messages when you receive a pet.",
-            section = petConfig
+        keyName = "includeCombatAchievements",
+        name = "Send Combat Achievement Notifications",
+        description = "Announce when a combat task or achievement is completed.",
+        section = combatSection,
+        position = 21
     )
-    default boolean includePets() {
-        return false;
-    }
+    default boolean includeCombatAchievements() { return true; }
 
     @ConfigItem(
-            keyName = "petMessage",
-            name = "Pet Message",
-            description = "Message to send to Discord on Pet",
-            section = petConfig,
-            position = 1
+        keyName = "combatAchievementsMessage",
+        name = "Combat Achievement Message",
+        description = "Message format. Supports: $name, $achievement.",
+        section = combatSection,
+        position = 22
     )
-    default String petMessage() {
-        return "$name has just received a pet!";
+    default String combatAchievementsMessage()
+    {
+        return "$name completed combat task: $achievement";
     }
-    // End Pet config section
-
-    // Collection Log section
-    @ConfigSection(
-            name = "Collection logs",
-            description = "The config for collection logs",
-            position = 6,
-            closedByDefault = true
-    )
-    String collectionLogsConfig = "collectionLogsConfig";
-
-    @ConfigItem(
-            keyName = "includeCollectionLogs",
-            name = "Collection Log Notifications",
-            description = "Message to send to Discord on collection logs completions",
-            section = collectionLogsConfig,
-            position = 1
-    )
-    default boolean includeCollectionLogs() {
-        return false;
-    }
-
-    @ConfigItem(
-            keyName = "collectionLogMessage",
-            name = "Collection log Message",
-            description = "Message to send to Discord on collection logs completions",
-            section = collectionLogsConfig,
-            position = 2
-    )
-    default String collectionLogMessage() {
-        return "$name received a new collection log item: $entry";
-    }
-    // end Collection Log section
-
-    // combat achievements section
-    @ConfigSection(
-            name = "Combat Achievements",
-            description = "The config for combat achievements",
-            position = 6,
-            closedByDefault = true
-    )
-    String combatAchievementsConfig = "combatAchievementsConfig";
-
-    @ConfigItem(
-            keyName = "includeCombatAchievements",
-            name = "Combat Achievements Notifications",
-            description = "Message to send to Discord on combat achievements completions",
-            section = combatAchievementsConfig,
-            position = 1
-    )
-    default boolean includeCombatAchievements() {
-        return false;
-    }
-
-    @ConfigItem(
-            keyName = "combatAchievementsMessage",
-            name = "Combat Achievement Message",
-            description = "Message to send to Discord on combat achievements completions",
-            section = combatAchievementsConfig,
-            position = 2
-    )
-    default String combatAchievementsMessage() {
-        return "$name has just completed a combat achievement: $achievement";
-    }
-    // end combat achievements section
 }

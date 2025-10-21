@@ -1,270 +1,336 @@
 package com.discordannouncements;
 
 import com.google.inject.Provides;
-
-import javax.inject.Inject;
-
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
-import net.runelite.api.Client;
-import net.runelite.api.GameState;
-import net.runelite.api.Skill;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.CommandExecuted;
-import net.runelite.api.events.StatChanged;
+import net.runelite.api.*;
+import net.runelite.api.events.*;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.callback.ClientThread;
+import net.runelite.client.ui.DrawManager;
+import net.runelite.client.util.Text;
+import okhttp3.*;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import javax.imageio.ImageIO;
+import javax.inject.Inject;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
 @PluginDescriptor(
     name = "Discord Announcements"
 )
-public class DiscordAnnouncementsPlugin extends Plugin {
-    @Inject
-    private Client client;
+public class DiscordAnnouncementsPlugin extends Plugin
+{
+    @Inject private Client client;
+    @Inject private DiscordAnnouncementsConfig config;
+    @Inject private ClientThread clientThread;
 
-    @Inject
-    private DiscordAnnouncementsConfig config;
-
-    @Inject
-    private ClientThread clientThread;
+    // For screenshots
+    @Inject private OkHttpClient okHttpClient;
+    @Inject private DrawManager drawManager;
 
     // Track last known real levels to detect actual level-ups
     private final Map<Skill, Integer> lastRealLevels = new EnumMap<>(Skill.class);
 
+    // Notification pop-up sequencing
+    private boolean notificationStarted = false;
+
     @Override
-    protected void startUp() throws Exception {
+    protected void startUp() throws Exception
+    {
         log.info("DiscordAnnouncements started!");
-        // Initialize last known real levels
-        if (client.getGameState() == GameState.LOGGED_IN || client.getGameState() == GameState.LOADING) {
-            for (Skill s : Skill.values()) {
-                try {
-                    lastRealLevels.put(s, client.getRealSkillLevel(s));
-                } catch (Exception ignored) {
-                    // Some clients may not return values for pseudo skills
-                }
+        if (client.getGameState() == GameState.LOGGED_IN || client.getGameState() == GameState.LOADING)
+        {
+            for (Skill s : Skill.values())
+            {
+                try { lastRealLevels.put(s, client.getRealSkillLevel(s)); }
+                catch (Exception ignored) { }
             }
         }
     }
 
     @Override
-    protected void shutDown() throws Exception {
+    protected void shutDown() throws Exception
+    {
         log.info("DiscordAnnouncements stopped!");
+        lastRealLevels.clear();
+        notificationStarted = false;
     }
 
+    // ---------- Manual test command: now respects global screenshot toggle ----------
     @Subscribe
-    public void onCommandExecuted(CommandExecuted commandExecuted) {
+    public void onCommandExecuted(CommandExecuted commandExecuted)
+    {
         final String command = commandExecuted.getCommand();
-        if (!"webhook".equalsIgnoreCase(command)) {
+        if (!"webhook".equalsIgnoreCase(command)) { return; }
+
+        final List<String> urls = parseWebhookUrls(config.webhook());
+        if (urls.isEmpty())
+        {
+            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Please set your Discord Webhook URL in the plugin settings.", null);
             return;
         }
 
-        final String webhookURLs = config.webhook();
-        if (webhookURLs == null || webhookURLs.isBlank()) {
-            client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Please set your Discord Webhook URL in the plugin settings.", null);
-            return;
-        }
-
-        String message = config.collectionLogMessage();
-
-        //        return "$name has just completed a collection log: $entry";
-        final String baseContent = message == null || message.isBlank()
-                ? "Test message from RuneLite DiscordAnnouncements plugin."
-                : message;
-        // Perform simple placeholder replacements for the test command.
+        String base = Optional.ofNullable(config.collectionLogMessage()).filter(s -> !s.isBlank())
+                              .orElse("Test message from RuneLite DiscordAnnouncements plugin.");
         final String rsn = client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null
-                ? client.getLocalPlayer().getName()
-                : "Player";
-        final String content = baseContent
-                .replace("$name", rsn)
-                .replace("$entry", "potato");
+            ? client.getLocalPlayer().getName() : "Player";
+        final String content = base.replace("$name", rsn).replace("$entry", "potato");
 
-
-        final String payload = "{\"content\":\"" + content.replace("\"", "\\\"") + "\"}";
-
-        // optional immediate feedback
         client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Sending test webhook...", null);
-
-        // Use the first valid URL for the test command to avoid spamming multiple channels
-        final List<String> urls = parseWebhookUrls(webhookURLs);
-        if (urls.isEmpty()) {
-            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: No valid webhook URL found.", null);
-            return;
-        }
-
-        final String testUrl = urls.get(0);
-
-        new Thread(() -> {
-            try {
-                HttpClient httpClient = HttpClient.newHttpClient();
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(testUrl))
-                        .header("Content-Type", "application/json; charset=utf-8")
-                        .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
-                        .build();
-
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    clientThread.invokeLater(() ->
-                        client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Test webhook sent successfully.", null)
-                    );
-                } else {
-                    log.warn("Discord webhook responded with status {} and body {}", response.statusCode(), response.body());
-                    final int status = response.statusCode();
-                    clientThread.invokeLater(() ->
-                        client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Webhook responded with status " + status, null)
-                    );
-                }
-            } catch (Exception e) {
-                log.error("Failed to send Discord webhook test", e);
-                clientThread.invokeLater(() ->
-                    client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Failed to send webhook test. See logs.", null)
-                );
-            }
-        }, "discord-announcements-webhook").start();
+        postDiscordToAll(urls, content, config.attachScreenshots());
     }
 
+    // ---------- Level-ups ----------
     @Subscribe
-    public void onStatChanged(StatChanged statChanged) {
-        if (!config.includeLevel()) {
-            return;
-        }
+    public void onStatChanged(StatChanged statChanged)
+    {
+        if (!config.includeLevel()) { return; }
 
         final Skill skill = statChanged.getSkill();
-        if (skill == null) {
-            return;
-        }
+        if (skill == null) { return; }
 
-        // Real level to avoid boosted/fluctuating levels
         final int current = client.getRealSkillLevel(skill);
         final int previous = lastRealLevels.getOrDefault(skill, current);
 
-        if (current <= previous) {
+        if (current <= previous)
+        {
             lastRealLevels.put(skill, current);
-            return; // no level up
+            return;
         }
-
-        // Update stored level immediately to prevent duplicate sends
         lastRealLevels.put(skill, current);
 
-        // Apply config gates
         final int min = Math.max(0, config.minimumLevel());
         final int interval = Math.max(1, config.levelInterval());
-
-        if (current < min) {
-            return;
-        }
+        if (current < min) { return; }
 
         final boolean milestone = current == 99 || (current % interval == 0);
-        if (!milestone) {
-            return;
-        }
+        if (!milestone) { return; }
 
-        // Build message
         final String playerName = client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null
-                ? client.getLocalPlayer().getName()
-                : "Player";
+            ? client.getLocalPlayer().getName() : "Player";
 
-        String content = config.levelMessage();
-        if (content == null || content.isBlank()) {
-            content = "$name has reached $skill level $level.";
-        }
+        String content = Optional.ofNullable(config.levelMessage()).filter(s -> !s.isBlank())
+            .orElse("$name has reached $skill level $level.");
 
         content = content
-                .replace("$name", playerName)
-                .replace("$skill", skill.getName())
-                .replace("$level", Integer.toString(current));
+            .replace("$name", playerName)
+            .replace("$skill", skill.getName())
+            .replace("$level", Integer.toString(current));
 
-        if (config.includeTotalLevelMessage()) {
+        if (config.includeTotalLevelMessage())
+        {
             final int total = computeTotalLevel();
-            String totalMsg = config.totalLevelMessage();
-            if (totalMsg == null) {
-                totalMsg = " - Total Level: $total";
-            }
-            totalMsg = totalMsg.replace("$total", Integer.toString(total));
-            content = content + totalMsg;
+            String totalMsg = Optional.ofNullable(config.totalLevelMessage()).orElse(" - Total Level: $total");
+            content = content + totalMsg.replace("$total", Integer.toString(total));
         }
 
-        final String payload = toJsonContentPayload(content);
         final List<String> urls = parseWebhookUrls(config.webhook());
-        if (urls.isEmpty()) {
-            return;
-        }
+        if (urls.isEmpty()) { return; }
 
-        // Send to all configured URLs off the client thread
-        for (String url : urls) {
-            sendWebhookAsync(url, payload, "level-up");
-        }
-
+        postDiscordToAll(urls, content, config.attachScreenshots());
         clientThread.invokeLater(() ->
-                client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Level notification sent.", null)
+            client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "DiscordAnnouncements: Level notification sent.", null)
         );
     }
 
-    private int computeTotalLevel() {
+    private int computeTotalLevel()
+    {
         int sum = 0;
-        for (Skill s : Skill.values()) {
-            if (s == Skill.OVERALL) {
-                continue;
-            }
-            try {
-                sum += client.getRealSkillLevel(s);
-            } catch (Exception ignored) {
-            }
+        for (Skill s : Skill.values())
+        {
+            if (s == Skill.OVERALL) { continue; }
+            try { sum += client.getRealSkillLevel(s); } catch (Exception ignored) { }
         }
         return sum;
     }
 
-    private List<String> parseWebhookUrls(String raw) {
-        if (raw == null) {
-            return List.of();
-        }
-        return Arrays.stream(raw.split("\\r?\\n"))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .collect(Collectors.toList());
-    }
+    // ---------- Collection Log & Combat Achievement detection ----------
 
-    private String toJsonContentPayload(String content) {
-        final String escaped = content.replace("\\", "\\\\").replace("\"", "\\\"");
-        return "{\"content\":\"" + escaped + "\"}";
-    }
+    @Subscribe
+    public void onScriptPreFired(ScriptPreFired e)
+    {
+        switch (e.getScriptId())
+        {
+            case ScriptID.NOTIFICATION_START:
+                notificationStarted = true;
+                break;
 
-    private void sendWebhookAsync(String url, String payload, String tag) {
-        new Thread(() -> {
-            try {
-                HttpClient httpClient = HttpClient.newHttpClient();
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .header("Content-Type", "application/json; charset=utf-8")
-                        .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
-                        .build();
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    log.warn("Discord webhook ({} {}) responded with status {} and body {}", tag, url, response.statusCode(), response.body());
+            case ScriptID.NOTIFICATION_DELAY:
+                if (!notificationStarted) { return; }
+
+                String topText = client.getVarcStrValue(VarClientStr.NOTIFICATION_TOP_TEXT);
+                String bottomText = client.getVarcStrValue(VarClientStr.NOTIFICATION_BOTTOM_TEXT);
+                notificationStarted = false;
+
+                if (topText == null || bottomText == null) { return; }
+
+                // Collection Log
+                if (config.includeCollectionLogs() && "Collection log".equalsIgnoreCase(topText))
+                {
+                    String entry = Text.removeTags(bottomText).trim();
+                    if (entry.toLowerCase().startsWith("new item:"))
+                    {
+                        entry = entry.substring("new item:".length()).trim();
+                    }
+                    handleCollectionLog(entry);
+                    return;
                 }
-            } catch (Exception e) {
-                log.error("Failed to send Discord webhook ({} {})", tag, url, e);
+
+                // Combat Achievement
+                if (config.includeCombatAchievements()
+                    && "Combat Task Completed!".equalsIgnoreCase(topText)
+                    && client.getVarbitValue(Varbits.COMBAT_ACHIEVEMENTS_POPUP) == 0)
+                {
+                    String task = extractMiddleText(bottomText);
+                    handleCombatAchievement(task);
+                }
+                break;
+
+            default:
+                // ignore
+        }
+    }
+
+    private static String extractMiddleText(String s)
+    {
+        String[] parts = s.split("<.*?>");
+        for (String p : parts)
+        {
+            String t = p.trim();
+            if (!t.isEmpty())
+            {
+                return t.replaceAll("[:?]$", "");
             }
-        }, "discord-announcements-" + tag).start();
+        }
+        return net.runelite.client.util.Text.removeTags(s).trim();
+    }
+
+    private void handleCollectionLog(String entry)
+    {
+        final List<String> urls = parseWebhookUrls(config.webhook());
+        if (urls.isEmpty()) { return; }
+
+        final String rsn = client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null
+            ? client.getLocalPlayer().getName() : "Player";
+
+        String content = Optional.ofNullable(config.collectionLogMessage()).filter(s -> !s.isBlank())
+            .orElse("$name has just added to the collection log: $entry");
+        content = content.replace("$name", rsn).replace("$entry", entry);
+
+        postDiscordToAll(urls, content, config.attachScreenshots());
+    }
+
+    private void handleCombatAchievement(String task)
+    {
+        final List<String> urls = parseWebhookUrls(config.webhook());
+        if (urls.isEmpty()) { return; }
+
+        final String rsn = client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null
+            ? client.getLocalPlayer().getName() : "Player";
+
+        String content = Optional.ofNullable(config.combatAchievementsMessage()).filter(s -> !s.isBlank())
+            .orElse("$name completed combat task: $achievement");
+        content = content.replace("$name", rsn).replace("$achievement", task);
+
+        postDiscordToAll(urls, content, config.attachScreenshots());
+    }
+
+    // ---------- Discord posting helpers (OkHttp multipart for screenshots) ----------
+
+    private void postDiscordToAll(List<String> urls, String content, boolean attachScreenshot)
+    {
+        if (urls == null || urls.isEmpty()) { return; }
+
+        for (String url : urls)
+        {
+            HttpUrl httpUrl = HttpUrl.parse(url);
+            if (httpUrl == null) { continue; }
+
+            MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("payload_json", "{\"content\":\"" + escapeJson(content) + "\"}");
+
+            if (attachScreenshot)
+            {
+                drawManager.requestNextFrameListener(image ->
+                {
+                    byte[] png = toPngBytes((BufferedImage) image);
+                    if (png != null)
+                    {
+                        bodyBuilder.addFormDataPart(
+                            "file",
+                            "image.png",
+                            RequestBody.create(MediaType.parse("image/png"), png)
+                        );
+                    }
+                    sendMultipart(httpUrl, bodyBuilder.build());
+                });
+            }
+            else
+            {
+                sendMultipart(httpUrl, bodyBuilder.build());
+            }
+        }
+    }
+
+    private void sendMultipart(HttpUrl url, RequestBody body)
+    {
+        Request request = new Request.Builder().url(url).post(body).build();
+        okHttpClient.newCall(request).enqueue(new Callback()
+        {
+            @Override public void onFailure(Call call, java.io.IOException e)
+            {
+                log.warn("Discord webhook failed", e);
+            }
+            @Override public void onResponse(Call call, Response response)
+            {
+                response.close();
+                if (!response.isSuccessful())
+                {
+                    log.warn("Discord webhook HTTP {}", response.code());
+                }
+            }
+        });
+    }
+
+    private static String escapeJson(String s)
+    {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static byte[] toPngBytes(BufferedImage img)
+    {
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream())
+        {
+            ImageIO.write(img, "png", out);
+            return out.toByteArray();
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+    }
+
+    private List<String> parseWebhookUrls(String raw)
+    {
+        if (raw == null) { return List.of(); }
+        return Arrays.stream(raw.split("\\r?\\n"))
+            .map(String::trim)
+            .filter(s -> !s.isBlank())
+            .collect(Collectors.toList());
     }
 
     @Provides
-    DiscordAnnouncementsConfig provideConfig(ConfigManager configManager) {
+    DiscordAnnouncementsConfig provideConfig(ConfigManager configManager)
+    {
         return configManager.getConfig(DiscordAnnouncementsConfig.class);
     }
 }
